@@ -35,6 +35,8 @@ app.post('/puntajes', function(req, res) {
     res.json(lista);
 });
 
-app.listen(3000, function() {
+const PUERTO = process.env.PORT || 3000;
+
+app.listen(PUERTO, function() {
     console.log('Servidor de puntajes corriendo en http://localhost:3000');
 });
