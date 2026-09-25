@@ -1,4 +1,9 @@
 {
+  "name": "omarex-puntajes-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node servidor.js"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1"
