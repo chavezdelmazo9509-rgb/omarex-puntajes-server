@@ -9,9 +9,24 @@ app.use(express.json());
 // ===== Base de datos (Upstash Redis) =====
 // En Render se configuran estas 2 variables (Environment).
 // Si no están, se usan los archivos .json como antes (sirve para probar en tu PC).
-const DB_URL = process.env.UPSTASH_REDIS_REST_URL;
-const DB_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+// Quita espacios y comillas que a veces se pegan sin querer al copiar
+function limpiarVariable(valor) {
+    return String(valor || '').trim().replace(/^["']|["']$/g, '').trim();
+}
+const DB_URL = limpiarVariable(process.env.UPSTASH_REDIS_REST_URL);
+const DB_TOKEN = limpiarVariable(process.env.UPSTASH_REDIS_REST_TOKEN);
 const USA_BASE_DE_DATOS = Boolean(DB_URL && DB_TOKEN);
+
+// Avisos claros en los Logs de Render si algo está mal configurado
+if (DB_URL && !DB_URL.startsWith('https://')) {
+    console.log('⚠️ UPSTASH_REDIS_REST_URL debe empezar con https:// — copia la URL de la sección "REST API" de Upstash (no la que empieza con redis:// o rediss://).');
+}
+if (DB_URL && !DB_TOKEN) {
+    console.log('⚠️ Falta la variable UPSTASH_REDIS_REST_TOKEN en Render.');
+}
+if (DB_TOKEN && !DB_URL) {
+    console.log('⚠️ Falta la variable UPSTASH_REDIS_REST_URL en Render.');
+}
 
 // Envía un comando a Upstash, por ejemplo ['GET', 'puntajes:snake']
 async function comandoDB(comando) {
@@ -20,6 +35,9 @@ async function comandoDB(comando) {
         headers: { Authorization: 'Bearer ' + DB_TOKEN, 'Content-Type': 'application/json' },
         body: JSON.stringify(comando)
     });
+    if (respuesta.status === 401) {
+        throw new Error('Upstash respondió 401: el TOKEN está mal. Copia otra vez UPSTASH_REDIS_REST_TOKEN de la sección "REST API".');
+    }
     if (!respuesta.ok) {
         throw new Error('Upstash respondió ' + respuesta.status);
     }
