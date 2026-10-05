@@ -3,8 +3,10 @@ const cors = require('cors');
 const fs = require('fs');
 
 const app = express();
+// Render pone un intermediario delante: así req.ip es la IP real del visitante
+app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 
 // ===== Base de datos (Upstash Redis) =====
 // En Render se configuran estas 2 variables (Environment).
@@ -141,6 +143,9 @@ app.post('/anime', async function(req, res) {
         res.status(500).json({ error: 'No se pudo guardar el puntaje' });
     }
 });
+
+// ===== Chat con IA =====
+require('./chat').activarChat(app);
 
 const PUERTO = process.env.PORT || 3000;
 
