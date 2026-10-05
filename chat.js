@@ -18,6 +18,8 @@ const MODELO = limpiar(process.env.GEMINI_MODEL) || 'gemma-4-26b-a4b-it';
 const MAX_POR_MINUTO = Number(process.env.CHAT_MAX_POR_MINUTO) || 6;   // por visitante
 const MAX_POR_DIA = Number(process.env.CHAT_MAX_POR_DIA) || 40;        // por visitante
 const MAX_TOTAL_DIA = Number(process.env.CHAT_MAX_TOTAL_DIA) || 300;   // entre todos
+// Google gratis permite ~16 000 tokens/minuto y cada consulta usa ~1 000: dejamos margen
+const MAX_TOTAL_MINUTO = Number(process.env.CHAT_MAX_TOTAL_MINUTO) || 10;
 const MAX_CARACTERES = 300;   // largo máximo de cada mensaje
 const MAX_MENSAJES = 6;       // cuántos mensajes anteriores se envían
 const MAX_RESPUESTA = 1200;   // largo máximo de la respuesta
@@ -69,6 +71,7 @@ Información de la página:
 // ===== Límites por visitante (en memoria) =====
 const visitas = new Map();
 let totalHoy = 0;
+let marcasTotales = [];
 let diaActual = new Date().toISOString().slice(0, 10);
 
 function revisarLimites(ip) {
@@ -78,6 +81,10 @@ function revisarLimites(ip) {
         diaActual = hoy;
         totalHoy = 0;
         visitas.clear();
+    }
+    marcasTotales = marcasTotales.filter(function(t) { return ahora - t < 60000; });
+    if (marcasTotales.length >= MAX_TOTAL_MINUTO) {
+        return 'Hay mucha gente usando el asistente ahora mismo. Intenta en un minuto.';
     }
     if (totalHoy >= MAX_TOTAL_DIA) {
         return 'Hoy ya se usó mucho el asistente. Prueba mañana o usa los botones.';
@@ -91,6 +98,7 @@ function revisarLimites(ip) {
         return 'Llegaste al límite de mensajes de hoy. Escríbele directo a Omar.';
     }
     v.marcas.push(ahora);
+    marcasTotales.push(ahora);
     v.dia++;
     totalHoy++;
     visitas.set(ip, v);
