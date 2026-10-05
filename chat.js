@@ -23,6 +23,7 @@ const MAX_TOTAL_MINUTO = Number(process.env.CHAT_MAX_TOTAL_MINUTO) || 10;
 const MAX_CARACTERES = 300;   // largo máximo de cada mensaje
 const MAX_MENSAJES = 6;       // cuántos mensajes anteriores se envían
 const MAX_RESPUESTA = 1200;   // largo máximo de la respuesta
+const TIEMPO_MAXIMO = 50000;  // cuánto se espera a Google (ms)
 
 // Solo estas páginas pueden usar el chat
 const ORIGENES = [
@@ -131,23 +132,36 @@ async function preguntarIA(personalidad, mensajes) {
     });
 
     const control = new AbortController();
-    const temporizador = setTimeout(function() { control.abort(); }, 25000);
-    try {
-        const respuesta = await fetch(
+    const temporizador = setTimeout(function() { control.abort(); }, TIEMPO_MAXIMO);
+    const inicio = Date.now();
+
+    // Envía la consulta a Google. "pensar" apagado hace las respuestas mucho más rápidas
+    async function enviar(sinPensar) {
+        const config = { maxOutputTokens: 400, temperature: 0.5 };
+        if (sinPensar) config.thinkingConfig = { thinkingBudget: 0 };
+        return fetch(
             'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(MODELO) + ':generateContent',
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': CLAVE },
-                body: JSON.stringify({
-                    contents: contenidos,
-                    generationConfig: { maxOutputTokens: 400, temperature: 0.5 }
-                }),
+                body: JSON.stringify({ contents: contenidos, generationConfig: config }),
                 signal: control.signal
             }
         );
+    }
+
+    try {
+        let respuesta = await enviar(true);
+        if (respuesta.status === 400) {
+            // Quizá este modelo no acepta apagar el "pensar": se reintenta sin esa opción
+            console.log('Google rechazó thinkingConfig, se reintenta sin esa opción');
+            respuesta = await enviar(false);
+        }
         if (!respuesta.ok) {
-            // Se registra solo el código, nunca la clave
-            throw new Error('Google respondió ' + respuesta.status);
+            // Se registra el código y el motivo, nunca la clave
+            let motivo = '';
+            try { motivo = (await respuesta.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (e) { /* sin detalle */ }
+            throw new Error('Google respondió ' + respuesta.status + ' ' + motivo);
         }
         const datos = await respuesta.json();
         const partes = (((datos.candidates || [])[0] || {}).content || {}).parts || [];
@@ -155,6 +169,7 @@ async function preguntarIA(personalidad, mensajes) {
         const texto = partes.filter(function(p) { return p.text && !p.thought; })
             .map(function(p) { return p.text; }).join('').trim();
         if (!texto) throw new Error('Respuesta vacía');
+        console.log('Chat con IA respondió en ' + (Date.now() - inicio) + ' ms');
         return texto.slice(0, MAX_RESPUESTA);
     } finally {
         clearTimeout(temporizador);
@@ -193,7 +208,7 @@ function activarChat(app) {
         try {
             res.json({ respuesta: await preguntarIA(personalidad, mensajes) });
         } catch (error) {
-            console.log('Error del chat con IA:', error.name === 'AbortError' ? 'tardó demasiado' : error.message);
+            console.log('Error del chat con IA:', error.name === 'AbortError' ? 'tardó más de ' + (TIEMPO_MAXIMO / 1000) + ' s' : error.message);
             res.status(503).json({ error: 'El asistente con IA no pudo responder' });
         }
     });
