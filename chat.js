@@ -122,6 +122,9 @@ function leerMensajes(cuerpo) {
     return lista;
 }
 
+// Si Google ya dijo que este modelo no acepta apagar el "pensar", no se vuelve a intentar
+let pensarSePuedeApagar = true;
+
 async function preguntarIA(personalidad, mensajes) {
     // Gemma no siempre acepta "instrucciones del sistema", así que van dentro del primer mensaje
     const contenidos = mensajes.map(function(m, i) {
@@ -137,7 +140,7 @@ async function preguntarIA(personalidad, mensajes) {
 
     // Envía la consulta a Google. "pensar" apagado hace las respuestas mucho más rápidas
     async function enviar(sinPensar) {
-        const config = { maxOutputTokens: 400, temperature: 0.5 };
+        const config = { maxOutputTokens: 2048, temperature: 0.5 };
         if (sinPensar) config.thinkingConfig = { thinkingBudget: 0 };
         return fetch(
             'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(MODELO) + ':generateContent',
@@ -151,10 +154,13 @@ async function preguntarIA(personalidad, mensajes) {
     }
 
     try {
-        let respuesta = await enviar(true);
-        if (respuesta.status === 400) {
+        let respuesta = await enviar(pensarSePuedeApagar);
+        if (respuesta.status === 400 && pensarSePuedeApagar) {
+            pensarSePuedeApagar = false;
             // Quizá este modelo no acepta apagar el "pensar": se reintenta sin esa opción
-            console.log('Google rechazó thinkingConfig, se reintenta sin esa opción');
+            let detalle = '';
+            try { detalle = (await respuesta.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (e) { /* sin detalle */ }
+            console.log('Google rechazó thinkingConfig, se reintenta sin esa opción:', detalle);
             respuesta = await enviar(false);
         }
         if (!respuesta.ok) {
@@ -168,7 +174,11 @@ async function preguntarIA(personalidad, mensajes) {
         // Se ignoran las partes de "pensamiento" si el modelo las envía
         const texto = partes.filter(function(p) { return p.text && !p.thought; })
             .map(function(p) { return p.text; }).join('').trim();
-        if (!texto) throw new Error('Respuesta vacía');
+        if (!texto) {
+            const candidato = (datos.candidates || [])[0] || {};
+            throw new Error('Respuesta vacía (finishReason=' + candidato.finishReason + ', partes=' + partes.length +
+                ', de pensamiento=' + partes.filter(function(p) { return p.thought; }).length + ')');
+        }
         console.log('Chat con IA respondió en ' + (Date.now() - inicio) + ' ms');
         return texto.slice(0, MAX_RESPUESTA);
     } finally {
