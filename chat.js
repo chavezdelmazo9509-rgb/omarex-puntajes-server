@@ -200,6 +200,9 @@ function activarChat(app) {
         }
     });
 
+    // Ruta liviana: el chat la llama al abrirse para despertar el servidor gratis antes de la primera pregunta
+    app.get('/salud', function(req, res) { res.json({ ok: true }); });
+
     app.options('/chat', permitirOrigenes);
     app.post('/chat', permitirOrigenes, async function(req, res) {
         if (!CLAVE) {
