@@ -132,9 +132,6 @@ function leerMensajes(cuerpo) {
     return lista;
 }
 
-// Si Google ya dijo que este modelo no acepta apagar el "pensar", no se vuelve a intentar
-let pensarSePuedeApagar = true;
-
 async function preguntarIA(personalidad, mensajes) {
     // Gemma no siempre acepta "instrucciones del sistema", así que van dentro del primer mensaje
     const contenidos = mensajes.map(function(m, i) {
@@ -148,30 +145,29 @@ async function preguntarIA(personalidad, mensajes) {
     const temporizador = setTimeout(function() { control.abort(); }, TIEMPO_MAXIMO);
     const inicio = Date.now();
 
-    // Envía la consulta a Google. "pensar" apagado hace las respuestas mucho más rápidas
-    async function enviar(sinPensar) {
-        const config = { maxOutputTokens: 2048, temperature: 0.5 };
-        if (sinPensar) config.thinkingConfig = { thinkingBudget: 0 };
+    // Los modelos Gemma piensan antes de responder y no permiten apagarlo, por eso 2048 tokens
+    function enviar() {
         return fetch(
             'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(MODELO) + ':generateContent',
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': CLAVE },
-                body: JSON.stringify({ contents: contenidos, generationConfig: config }),
+                body: JSON.stringify({
+                    contents: contenidos,
+                    generationConfig: { maxOutputTokens: 2048, temperature: 0.5 }
+                }),
                 signal: control.signal
             }
         );
     }
 
     try {
-        let respuesta = await enviar(pensarSePuedeApagar);
-        if (respuesta.status === 400 && pensarSePuedeApagar) {
-            pensarSePuedeApagar = false;
-            // Quizá este modelo no acepta apagar el "pensar": se reintenta sin esa opción
-            let detalle = '';
-            try { detalle = (await respuesta.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (e) { /* sin detalle */ }
-            console.log('Google rechazó thinkingConfig, se reintenta sin esa opción:', detalle);
-            respuesta = await enviar(false);
+        let respuesta = await enviar();
+        // Google a veces falla un instante (500/502/503/504): se reintenta una sola vez
+        if ([500, 502, 503, 504].includes(respuesta.status)) {
+            console.log('Google respondió ' + respuesta.status + ', se reintenta una vez');
+            await new Promise(function(listo) { setTimeout(listo, 1500); });
+            respuesta = await enviar();
         }
         if (!respuesta.ok) {
             // Se registra el código y el motivo, nunca la clave
